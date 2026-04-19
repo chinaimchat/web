@@ -1,0 +1,35 @@
+gzip on;
+gzip_min_length 1k;
+gzip_disable msie6;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 2;
+gzip_buffers 16 8k;
+gzip_http_version 1.1;
+gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+
+server {
+        listen       80;
+        server_name  ${WEB_SERVER_NAME};
+
+        # 将 /api/v1/* 代理到唐僧叨叨后端（含 sticker、moments 等模块接口）
+        # 启动容器时需传环境变量 API_URL，例如: -e API_URL=http://后端服务:8080/
+        # 请求 /api/v1/sticker/store 会被转发为 后端/v1/sticker/store
+        location /api/ {
+            proxy_pass  ${API_URL};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            client_max_body_size 1000m;
+            client_body_buffer_size 500m;
+        }
+
+        # SPA：先找文件，找不到则回退到 index.html，避免刷新子路径 404
+        location / {
+            root   /usr/share/nginx/html;
+            index  index.html index.htm;
+            try_files $uri $uri/ /index.html;
+        }
+}

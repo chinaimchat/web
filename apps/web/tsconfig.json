@@ -1,0 +1,38 @@
+{
+  "extends": "../../packages/tsconfig/react-library.json",
+  "include": ["src"],
+  "exclude": ["node_modules", "build", "dist-ele", "src-election"],
+  "compilerOptions": {
+    "strict": false,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@tsdaodao/base": ["../../packages/tsdaodaobase/src"],
+      "@tsdaodao/base/*": ["../../packages/tsdaodaobase/src/*"],
+      "@tsdaodao/login": ["../../packages/tsdaodaologin/src"],
+      "@tsdaodao/login/*": ["../../packages/tsdaodaologin/src/*"],
+      "@tsdaodao/datasource": ["../../packages/tsdaodaodatasource/src"],
+      "@tsdaodao/datasource/*": ["../../packages/tsdaodaodatasource/src/*"],
+      "@tsdaodao/file": ["../../packages/tsdaodaofile/src"],
+      "@tsdaodao/file/*": ["../../packages/tsdaodaofile/src/*"],
+      "@tsdaodao/contacts": ["../../packages/tsdaodaocontacts/src"],
+      "@tsdaodao/contacts/*": ["../../packages/tsdaodaocontacts/src/*"],
+      "@tsdaodao/favorite": ["../../packages/tsdaodaofavorite/src"],
+      "@tsdaodao/favorite/*": ["../../packages/tsdaodaofavorite/src/*"],
+      "@tsdaodao/groupmanager": ["../../packages/tsdaodaogroupmanager/src"],
+      "@tsdaodao/groupmanager/*": ["../../packages/tsdaodaogroupmanager/src/*"],
+      "@tsdaodao/advanced": ["../../packages/tsdaodaoadvanced/src"],
+      "@tsdaodao/advanced/*": ["../../packages/tsdaodaoadvanced/src/*"],
+      "@tsdaodao/moments": ["../../packages/tsdaodaomoments/src"],
+      "@tsdaodao/moments/*": ["../../packages/tsdaodaomoments/src/*"],
+      "@tsdaodao/privacy": ["../../packages/tsdaodaoprivacy/src"],
+      "@tsdaodao/privacy/*": ["../../packages/tsdaodaoprivacy/src/*"],
+      "@tsdaodao/video": ["../../packages/tsdaodaovideo/src"],
+      "@tsdaodao/video/*": ["../../packages/tsdaodaovideo/src/*"],
+      "@tsdaodao/sticker": ["../../packages/tsdaodaosticker/src"],
+      "@tsdaodao/sticker/*": ["../../packages/tsdaodaosticker/src/*"]
+    },
+    "allowSyntheticDefaultImports": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
