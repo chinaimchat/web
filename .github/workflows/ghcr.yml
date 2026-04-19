@@ -42,6 +42,8 @@ jobs:
         with:
           branch: cf-dist
           folder: apps/web/build
+          # 每次部署只保留一个提交，避免 cf-dist 再堆出长历史
+          single-commit: true
 
       - name: ⚙️ Enable QEMU for Cross-Arch Builds
         uses: docker/setup-qemu-action@v3
