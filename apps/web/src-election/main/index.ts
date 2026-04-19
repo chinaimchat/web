@@ -130,10 +130,12 @@ const getWindowConfig = (sessionPartition: string) => {
   return {
     width: 1200,
     height: 800,
-    // 给打包后的 PC 端留出更宽松的最小尺寸，避免在小屏（1366x768、1280x720 等）
-    // 或分辨率被系统缩放过后，无法把窗口拖到更小尺寸的问题。
-    minWidth: 800,
-    minHeight: 500,
+    // 完全放开窗口最小尺寸：用户可以把窗口拖到 360x480（典型手机宽度），
+    // 此时前端 CSS 会自动切到「单栏移动端模式」（@media max-width: 640px），
+    // 只显示会话列表 / 聊天面板其中一栏，便于把窗口靠在屏幕一边当通知栏用。
+    // 与浏览器 Web 端的窄屏行为完全对齐。
+    minWidth: 360,
+    minHeight: 480,
     show: false,
     // 显式声明：窗口必须是带系统边框、可缩放、可最大/最小化、可全屏化的常规窗口。
     // 之前 `hasShadow: false` 在 Windows + DWM 下会让系统边框的 1~2px 缩放热区
