@@ -219,10 +219,12 @@ export class CommonDataSource implements ICommonDataSource {
         return WKApp.apiClient.get("user/qrcode")
     }
 
-    friendSure(token: string): Promise<void> {
-        return WKApp.apiClient.post("friend/sure", {
-            "token": token,
-        })
+    friendSure(token: string, remark?: string): Promise<void> {
+        const body: Record<string, string> = { token }
+        if (remark !== undefined && remark !== "") {
+            body.remark = remark
+        }
+        return WKApp.apiClient.post("friend/sure", body)
     }
 
     friendApply(req:{uid:string,remark:string,vercode:string}):Promise<void> {

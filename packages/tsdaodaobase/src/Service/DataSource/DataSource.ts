@@ -120,7 +120,7 @@ export interface ICommonDataSource {
    * 确认好友申请
    * @param token 
    */
-    friendSure(token: string): Promise<void>
+    friendSure(token: string, remark?: string): Promise<void>
 
     /**
      * 好友申请
