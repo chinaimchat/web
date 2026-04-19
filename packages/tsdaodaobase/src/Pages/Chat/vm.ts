@@ -24,6 +24,7 @@ export class ChatVM extends ProviderListener {
     private messageDeleteListener!: MessageDeleteListener
     private conversationListID = "wk-conversationlist"
     private _showGlobalSearch = false // 是否显示全局搜索
+    private _autoSelectedFirstConversation = false // 本次会话生命周期内是否已自动选中过第一个会话
 
 
     set showAddPopover(v: boolean) {
@@ -283,6 +284,31 @@ export class ChatVM extends ProviderListener {
         this.notifyListener()
 
         WKApp.menus.refresh()
+
+        // 登录后首次加载完会话列表时，自动打开排序后的第一个会话，避免右侧空白页
+        this.autoSelectFirstConversationIfNeeded()
+    }
+
+    // 自动选中第一个会话（仅在每次页面加载后执行一次，且当前没有打开任何会话时）
+    private autoSelectFirstConversationIfNeeded() {
+        if (this._autoSelectedFirstConversation) {
+            return
+        }
+        if (WKApp.shared.openChannel) {
+            return
+        }
+        if (!this.conversations || this.conversations.length === 0) {
+            return
+        }
+        const sorted = this.sortConversations() || this.conversations
+        const first = (sorted && sorted.length > 0) ? sorted[0] : this.conversations[0]
+        if (!first) {
+            return
+        }
+        this._autoSelectedFirstConversation = true
+        this._selectedConversation = first
+        WKApp.endpoints.showConversation(first.channel)
+        this.notifyListener()
     }
 }
 
