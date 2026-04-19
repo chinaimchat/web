@@ -130,11 +130,21 @@ const getWindowConfig = (sessionPartition: string) => {
   return {
     width: 1200,
     height: 800,
-    minWidth: 960,
-    minHeight: 600,
-    hasShadow: false,
+    // 给打包后的 PC 端留出更宽松的最小尺寸，避免在小屏（1366x768、1280x720 等）
+    // 或分辨率被系统缩放过后，无法把窗口拖到更小尺寸的问题。
+    minWidth: 800,
+    minHeight: 500,
     show: false,
+    // 显式声明：窗口必须是带系统边框、可缩放、可最大/最小化、可全屏化的常规窗口。
+    // 之前 `hasShadow: false` 在 Windows + DWM 下会让系统边框的 1~2px 缩放热区
+    // 失去阴影提示，部分用户反馈"拖不动边角"，去掉这个标志后系统帧表现回到默认。
+    frame: true,
     resizable: true,
+    maximizable: true,
+    minimizable: true,
+    closable: true,
+    fullscreenable: true,
+    movable: true,
     // Windows: 允许用户按 Alt 键显示/隐藏菜单栏
     autoHideMenuBar: isWin,
     icon: logo,
