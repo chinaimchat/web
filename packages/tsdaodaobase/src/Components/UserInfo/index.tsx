@@ -11,9 +11,6 @@ import "./index.css"
 import { UserInfoRouteData, UserInfoVM } from "./vm";
 import FriendApplyUI from "../FriendApply";
 import RouteContext, { FinishButtonContext } from "../../Service/Context";
-import { Image } from '@douyinfe/semi-ui';
-
-
 export interface UserInfoProps extends HTMLProps<any> {
     uid: string
     fromChannel?: Channel // 从那个频道进来的
@@ -106,7 +103,15 @@ export default class UserInfo extends Component<UserInfoProps> {
                                 <div className="wk-userinfo-header">
                                     <div className="wk-userinfo-user">
                                         <div className="wk-userinfo-user-avatar">
-                                            <Image src={WKApp.shared.avatarUser(uid)}></Image>
+                                            {/* 原生 img + key：Semi Image 会缓存同 uid 头像；且 URL 上 ?v= 变化后需强制换 DOM 才一定重拉 */}
+                                            <img
+                                                alt=""
+                                                className="wk-userinfo-user-avatar-img"
+                                                src={WKApp.shared.avatarUser(uid)}
+                                                key={WKApp.shared.getChannelAvatarTag(
+                                                    new Channel(uid, ChannelTypePerson)
+                                                )}
+                                            />
                                         </div>
                                         <div className="wk-userinfo-user-info">
                                             <div className="wk-userinfo-user-info-name">

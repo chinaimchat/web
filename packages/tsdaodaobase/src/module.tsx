@@ -355,8 +355,12 @@ export default class BaseModule implements IModule {
           );
         }
       } else if (cmdContent.cmd === "userAvatarUpdate") { // 用户头像更新
-        WKApp.shared.changeChannelAvatarTag(new Channel(param.uid, ChannelTypePerson));
+        const personChannel = new Channel(param.uid, ChannelTypePerson);
+        WKApp.shared.changeChannelAvatarTag(personChannel);
         WKApp.dataSource.notifyContactsChange();
+        // 必须同步拉取频道资料：avatarChannel() 优先用 channelInfo.logo；
+        // 仅改本地 ?v= 时若 logo 仍是旧完整 URL，Semi Image / 部分浏览器组合下资料页会「列表新、点进去旧」。
+        WKSDK.shared().channelManager.fetchChannelInfo(personChannel);
       }
     });
 

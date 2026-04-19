@@ -198,6 +198,11 @@ export class UserInfoVM extends ProviderListener {
         this.vercode = res.vercode
       }
     }
+    // 与 IM 侧 channelManager 同步：资料页头像走 avatarChannel()，会优先用 SDK 里缓存的 logo；
+    // 仅依赖 HTTP users 接口不够，否则容易出现「列表已新、点进资料仍旧」。
+    WKSDK.shared().channelManager.fetchChannelInfo(
+      new Channel(this.uid, ChannelTypePerson)
+    );
 
     this.notifyListener();
   }

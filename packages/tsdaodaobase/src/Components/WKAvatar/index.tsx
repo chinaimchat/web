@@ -18,8 +18,7 @@ const defaultAvatarSVG = `
 `;
 
 export interface WKAvatarState {
-    src: string
-    loadedErr: boolean // 图片是否加载错误
+    loadedErr: boolean // 图片是否加载错误（失败时用占位图）
 }
 
 export default class WKAvatar extends Component<WKAvatarProps, WKAvatarState> {
@@ -27,7 +26,6 @@ export default class WKAvatar extends Component<WKAvatarProps, WKAvatarState> {
     constructor(props: any) {
         super(props);
         this.state = {
-            src: this.getImageSrc(),
             loadedErr: false,
         };
     }
@@ -47,16 +45,17 @@ export default class WKAvatar extends Component<WKAvatarProps, WKAvatarState> {
         return imgSrc
     }
     handleImgError() {
-        this.setState({ src: defaultAvatarSVG, loadedErr: true });
+        this.setState({ loadedErr: true });
     };
     handleLoad() {
-        if(!this.state.loadedErr) {
-            this.setState({ src: this.getImageSrc() })
+        if (this.state.loadedErr) {
+            this.setState({ loadedErr: false });
         }
-        
     }
     render() {
         const { style } = this.props
-        return <img alt="" style={style} className="wk-avatar" src={this.state.src} onLoad={this.handleLoad.bind(this)} onError={this.handleImgError.bind(this)} />
+        const liveSrc = this.getImageSrc()
+        const src = this.state.loadedErr ? defaultAvatarSVG : liveSrc
+        return <img alt="" style={style} className="wk-avatar" src={src} onLoad={this.handleLoad.bind(this)} onError={this.handleImgError.bind(this)} />
     }
 }
