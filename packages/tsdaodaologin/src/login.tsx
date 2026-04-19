@@ -142,6 +142,9 @@ class Login extends Component<any, LoginState> {
                                     进入 <b>消息</b> &nbsp; &gt; &nbsp; <b>+</b>  &nbsp; &gt; &nbsp;<b>扫一扫</b>
                                 </li>
                                 <li>
+                                    请勿使用系统相机或微信扫一扫：二维码里是服务端登录接口地址，只有 App 内「扫一扫」会带上账号凭证；用系统扫码往往只会提示或打开一串以 http 开头的链接，无法完成网页登录。
+                                </li>
+                                <li>
                                     将你的手机摄像头对准上面二维码进行扫描
                                 </li>
                                 <li>
