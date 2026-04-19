@@ -139,6 +139,9 @@ yarn clean
 
 ### PC 文档索引
 
+> 📘 **使用者 / 测试 / 客服**：先看 **[PC 客户端使用说明（大白话版）](docs/pc-usage-guide.md)** —— 五种"开窗"场景、窗口缩放/最大化/全屏、托盘、通知、多账号、卸载、常见问题速查。
+> 🛠 **开发 / 打包**：再看下面的远程网页壳/形态切换文档。
+
 主文档：**[docs/pc-electron-remote-web.md](docs/pc-electron-remote-web.md)**（下文锚点在该文件内；GitHub / VS Code 等预览中可点击跳转。）
 
 | 序号 | 章节 | 锚点 |
