@@ -69,7 +69,7 @@ export class WKConfig {
 
 export class WKRemoteConfig {
   revokeSecond: number = 2 * 60; // 撤回时间
-  registerInviteOn: number = 0; // 邀请码注册开关（1: 开启）
+  inviteCodeSystemOn: number = 0; // 邀请码系统总开关（1: 开启；控制注册是否必须填邀请码）
   showLastOfflineOn: number = 1; // 是否显示对方上次在线时间
   /** 是否展示对方分端在线（Web/手机/PC）；0 时客户端不应渲染分端文案，服务端已对非本人 device_flag 脱敏 */
   showDeviceOnlineOn: number = 1;
@@ -94,7 +94,7 @@ export class WKRemoteConfig {
     return WKApp.apiClient.get("common/appconfig").then((result) => {
       this.requestSuccess = true;
       this.revokeSecond = result["revoke_second"];
-      this.registerInviteOn = Number(result["register_invite_on"] || 0);
+      this.inviteCodeSystemOn = Number(result["invite_code_system_on"] || 0);
       this.showLastOfflineOn = Number(result["show_last_offline_on"] ?? 1);
       this.showDeviceOnlineOn = Number(result["show_device_online_on"] ?? 1);
     });

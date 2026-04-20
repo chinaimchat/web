@@ -177,7 +177,7 @@ class Login extends Component<any, LoginState> {
                                 vm.regName = v.target.value
                             }}></input>
                             {
-                                (WKApp.remoteConfig as any).registerInviteOn === 1
+                                (WKApp.remoteConfig as any).inviteCodeSystemOn === 1
                                     ? <input ref={this.registerInviteRef} type="text" placeholder="邀请码" onChange={(v) => {
                                         vm.regInviteCode = v.target.value
                                     }}></input>
