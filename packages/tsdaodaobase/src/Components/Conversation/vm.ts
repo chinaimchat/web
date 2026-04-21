@@ -184,9 +184,8 @@ export default class ConversationVM extends ProviderListener {
             return
         }
 
-        WKApp.conversationProvider.deleteMessages(deletedMessages)
-
-        this.deleteMessagesFromLocal(deletedMessages)
+        await WKApp.conversationProvider.deleteMessages(deletedMessages)
+        await this.deleteMessagesFromLocal(deletedMessages)
     }
 
     // 撤回消息

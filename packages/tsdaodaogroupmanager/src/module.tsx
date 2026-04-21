@@ -17,7 +17,7 @@ import {
 import { ChannelSettingManager } from "@tsdaodao/base/src/Service/ChannelSetting";
 import type { ListItemSwitchContext } from "@tsdaodao/base/src/Components/ListItem";
 import { SubscriberList } from "@tsdaodao/base";
-import { ChannelTypeGroup } from "wukongimjssdk";
+import { Channel, ChannelTypeGroup, ChannelTypePerson, WKSDK } from "wukongimjssdk";
 import type { Subscriber } from "wukongimjssdk";
 import React from "react";
 import { Toast } from "@douyinfe/semi-ui";
@@ -25,6 +25,19 @@ import ChannelManage from "./ChannelSetting/manage";
 import GroupBlacklistView from "./GroupBlacklistView";
 
 export default class GroupManagerModule implements IModule {
+  private isPrivilegedAccount(): boolean {
+    const loginUID = WKApp.loginInfo?.uid;
+    if (!loginUID) {
+      return false;
+    }
+    const meInfo = WKSDK.shared().channelManager.getChannelInfo(
+      new Channel(loginUID, ChannelTypePerson)
+    );
+    const me = WKSDK.shared().channelManager.getChannel(loginUID, ChannelTypePerson);
+    const category = (meInfo as any)?.orgData?.category ?? (meInfo as any)?.category ?? (me as any)?.category;
+    return category === "system" || category === "customerService";
+  }
+
   id(): string {
     return "GroupManagerModule";
   }
@@ -37,7 +50,8 @@ export default class GroupManagerModule implements IModule {
       const channel = data.channel;
       if (channel.channelType !== ChannelTypeGroup) return undefined;
       const subscriberOfMe = data.subscriberOfMe;
-      if (subscriberOfMe?.role !== GroupRole.owner && subscriberOfMe?.role !== GroupRole.manager) {
+      const isPrivileged = this.isPrivilegedAccount();
+      if (!isPrivileged && subscriberOfMe?.role !== GroupRole.owner && subscriberOfMe?.role !== GroupRole.manager) {
         return undefined;
       }
       return new Section({
@@ -94,7 +108,8 @@ export default class GroupManagerModule implements IModule {
     WKApp.shared.channelManageRegister("channel.manage.transfer", (context) => {
       const data = context.routeData() as ChannelSettingRouteData;
       const channel = data.channel;
-      if (channel.channelType !== ChannelTypeGroup || data.subscriberOfMe?.role !== GroupRole.owner)
+      const isPrivileged = this.isPrivilegedAccount();
+      if (channel.channelType !== ChannelTypeGroup || (!isPrivileged && data.subscriberOfMe?.role !== GroupRole.owner))
         return undefined;
       let transferToUID: string;
       let transferFinishContext: FinishButtonContext;
@@ -278,7 +293,8 @@ export default class GroupManagerModule implements IModule {
     WKApp.shared.channelManageRegister("channel.manage.disband", (context) => {
       const data = context.routeData() as ChannelSettingRouteData;
       const channel = data.channel;
-      if (channel.channelType !== ChannelTypeGroup || data.subscriberOfMe?.role !== GroupRole.owner)
+      const isPrivileged = this.isPrivilegedAccount();
+      if (channel.channelType !== ChannelTypeGroup || (!isPrivileged && data.subscriberOfMe?.role !== GroupRole.owner))
         return undefined;
       return new Section({
         rows: [

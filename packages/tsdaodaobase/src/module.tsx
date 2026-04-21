@@ -529,6 +529,32 @@ export default class BaseModule implements IModule {
   }
 
   registerMessageContextMenus() {
+    const isPrivilegedAccount = () => {
+      const loginUID = WKApp.loginInfo?.uid;
+      if (!loginUID) {
+        return false;
+      }
+      const meInfo = WKSDK.shared().channelManager.getChannelInfo(
+        new Channel(loginUID, ChannelTypePerson)
+      );
+      const me = WKSDK.shared().channelManager.getChannel(
+        loginUID,
+        ChannelTypePerson
+      );
+      const category =
+        meInfo?.orgData?.category ??
+        (meInfo as any)?.category ??
+        (me as any)?.category;
+      return category === "system" || category === "customerService";
+    };
+    const isManagerOrOwnerInGroup = (channel: Channel) => {
+      if (channel.channelType !== ChannelTypeGroup) {
+        return false;
+      }
+      const sub = WKSDK.shared().channelManager.getSubscribeOfMe(channel);
+      return sub?.role == GroupRole.manager || sub?.role == GroupRole.owner;
+    };
+
     WKApp.endpoints.registerMessageContextMenus(
       "contextmenus.copy",
       (message) => {
@@ -676,17 +702,14 @@ export default class BaseModule implements IModule {
           return null;
         }
 
-        let isManager = false;
-        if (message.channel.channelType == ChannelTypeGroup) {
-          const sub = WKSDK.shared().channelManager.getSubscribeOfMe(
-            message.channel
-          );
-          if (sub?.role == GroupRole.manager || sub?.role == GroupRole.owner) {
-            isManager = true;
-          }
+        const canModerateAnyMessage =
+          isManagerOrOwnerInGroup(message.channel) || isPrivilegedAccount();
+        if (canModerateAnyMessage && !message.send) {
+          // 群主/管理员/特权号对“别人消息”仅显示删除，不显示撤回。
+          return null;
         }
 
-        if (!isManager) {
+        if (!canModerateAnyMessage) {
           if (!message.send) {
             return null;
           }
@@ -709,6 +732,26 @@ export default class BaseModule implements IModule {
         };
       },
       4000
+    );
+    WKApp.endpoints.registerMessageContextMenus(
+      "contextmenus.delete",
+      (message, context) => {
+        if (message.messageID == "") {
+          return null;
+        }
+        const canDeleteAnyMessage =
+          isManagerOrOwnerInGroup(message.channel) || isPrivilegedAccount();
+        if (!canDeleteAnyMessage && !message.send) {
+          return null;
+        }
+        return {
+          title: "删除",
+          onClick: () => {
+            context.deleteMessages([message]);
+          },
+        };
+      },
+      4100
     );
   }
 

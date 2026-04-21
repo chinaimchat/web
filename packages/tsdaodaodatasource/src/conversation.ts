@@ -24,9 +24,8 @@ export class ConversationProvider implements IConversationProvider {
             })
         }
 
-        return await axios.delete("message", {
-            data: params
-        })
+        // Browser + proxy stacks may drop DELETE bodies; use POST alias for reliable delivery.
+        return WKApp.apiClient.post("message/delete", params)
     }
     revokeMessage(message: Message): Promise<void> {
         return WKApp.apiClient.post(`message/revoke?channel_id=${message.channel.channelID}&channel_type=${message.channel.channelType}&message_id=${message.messageID}&client_msg_no=${message.clientMsgNo}`)

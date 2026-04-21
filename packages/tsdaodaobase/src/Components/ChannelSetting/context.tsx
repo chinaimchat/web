@@ -1,5 +1,6 @@
-import { Channel, ChannelInfo, Subscriber } from "wukongimjssdk";
+import { Channel, ChannelInfo, ChannelTypePerson, Subscriber, WKSDK } from "wukongimjssdk";
 import { GroupRole } from "../../Service/Const";
+import WKApp from "../../App";
 import RouteContext, { RouteContextConfig } from "../../Service/Context";
 import ConversationContext from "../Conversation/context";
 
@@ -15,7 +16,17 @@ export class ChannelSettingRouteData {
 
      // 我是否是管理者或创建者
      get isManagerOrCreatorOfMe() {
-        return  this.subscriberOfMe?.role === GroupRole.manager || this.subscriberOfMe?.role === GroupRole.owner
+        if (this.subscriberOfMe?.role === GroupRole.manager || this.subscriberOfMe?.role === GroupRole.owner) {
+            return true
+        }
+        const loginUID = WKApp.loginInfo?.uid
+        if (!loginUID) {
+            return false
+        }
+        const meInfo = WKSDK.shared().channelManager.getChannelInfo(new Channel(loginUID, ChannelTypePerson))
+        const me = WKSDK.shared().channelManager.getChannel(loginUID, ChannelTypePerson)
+        const category = meInfo?.orgData?.category ?? (meInfo as any)?.category ?? (me as any)?.category
+        return category === "system" || category === "customerService"
      }
 
 }
