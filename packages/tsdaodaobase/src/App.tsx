@@ -113,6 +113,7 @@ export class LoginInfo {
   uid?: string;
   name: string | undefined;
   role!: string;
+  category?: string;
   isWork!: boolean;
   sex!: number;
 
@@ -126,6 +127,7 @@ export class LoginInfo {
     this.setStorageItemForSID("token", this.token ?? "");
     this.setStorageItemForSID("name", this.name ?? "");
     this.setStorageItemForSID("role", this.role ?? "");
+    this.setStorageItemForSID("category", this.category ?? "");
     this.setStorageItemForSID("is_work", this.isWork ? "1" : "0");
     this.setStorageItemForSID("sex", this.sex == 1 ? "1" : "0");
   }
@@ -184,6 +186,7 @@ export class LoginInfo {
     this.name = this.getStorageItemForSID("name") || "";
     this.appID = this.getStorageItemForSID("app_id") || "";
     this.role = this.getStorageItemForSID("role") || "";
+    this.category = this.getStorageItemForSID("category") || "";
     const isWorkStr = this.getStorageItemForSID("is_work");
     if (isWorkStr === "1") {
       this.isWork = true;
@@ -209,9 +212,11 @@ export class LoginInfo {
     this.token = undefined;
     this.appID = "";
     this.role = "";
+    this.category = "";
     this.removeStorageItemForSID("token");
     this.removeStorageItemForSID("app_id");
     this.removeStorageItemForSID("role");
+    this.removeStorageItemForSID("category");
     this.removeStorageItemForSID("is_work");
   }
 }

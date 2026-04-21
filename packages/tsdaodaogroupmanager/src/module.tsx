@@ -26,16 +26,31 @@ import GroupBlacklistView from "./GroupBlacklistView";
 
 export default class GroupManagerModule implements IModule {
   private isPrivilegedAccount(): boolean {
-    const loginUID = WKApp.loginInfo?.uid;
-    if (!loginUID) {
+    try {
+      const loginUID = WKApp.loginInfo?.uid;
+      if (
+        loginUID &&
+        (loginUID === WKApp.config?.systemUID ||
+          loginUID === WKApp.config?.fileHelperUID)
+      ) {
+        return true;
+      }
+      const loginCategory = WKApp.loginInfo?.category;
+      if (loginCategory === "system" || loginCategory === "customerService") {
+        return true;
+      }
+      if (!loginUID) {
+        return false;
+      }
+      const meInfo = WKSDK.shared().channelManager.getChannelInfo(
+        new Channel(loginUID, ChannelTypePerson)
+      );
+      const category = (meInfo as any)?.orgData?.category ?? (meInfo as any)?.category;
+      return category === "system" || category === "customerService";
+    } catch (e) {
+      console.error("[GroupManagerModule] isPrivilegedAccount failed", e);
       return false;
     }
-    const meInfo = WKSDK.shared().channelManager.getChannelInfo(
-      new Channel(loginUID, ChannelTypePerson)
-    );
-    const me = WKSDK.shared().channelManager.getChannel(loginUID, ChannelTypePerson);
-    const category = (meInfo as any)?.orgData?.category ?? (meInfo as any)?.category ?? (me as any)?.category;
-    return category === "system" || category === "customerService";
   }
 
   id(): string {

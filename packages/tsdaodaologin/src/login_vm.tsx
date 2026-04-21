@@ -283,6 +283,13 @@ export class LoginVM extends ProviderListener {
         loginInfo.token = payload?.token ?? payload?.auth_token ?? payload?.authToken ?? loginInfo.token
         loginInfo.name = payload?.name ?? payload?.nickname ?? loginInfo.name
         loginInfo.sex = payload?.sex ?? loginInfo.sex
+        loginInfo.category =
+            payload?.category ??
+            payload?.orgData?.category ??
+            payload?.org_data?.category ??
+            payload?.user?.category ??
+            payload?.user_info?.category ??
+            loginInfo.category
         loginInfo.save()
 
         if (window.location.pathname === "/login") {

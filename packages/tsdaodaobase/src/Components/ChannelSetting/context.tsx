@@ -16,17 +16,28 @@ export class ChannelSettingRouteData {
 
      // 我是否是管理者或创建者
      get isManagerOrCreatorOfMe() {
-        if (this.subscriberOfMe?.role === GroupRole.manager || this.subscriberOfMe?.role === GroupRole.owner) {
-            return true
-        }
-        const loginUID = WKApp.loginInfo?.uid
-        if (!loginUID) {
+        try {
+            if (this.subscriberOfMe?.role === GroupRole.manager || this.subscriberOfMe?.role === GroupRole.owner) {
+                return true
+            }
+            const loginUID = WKApp.loginInfo?.uid
+            if (loginUID && (loginUID === WKApp.config?.systemUID || loginUID === WKApp.config?.fileHelperUID)) {
+                return true
+            }
+            const loginCategory = WKApp.loginInfo?.category
+            if (loginCategory === "system" || loginCategory === "customerService") {
+                return true
+            }
+            if (!loginUID) {
+                return false
+            }
+            const meInfo = WKSDK.shared().channelManager.getChannelInfo(new Channel(loginUID, ChannelTypePerson))
+            const category = meInfo?.orgData?.category ?? (meInfo as any)?.category
+            return category === "system" || category === "customerService"
+        } catch (e) {
+            console.error("[ChannelSetting] isManagerOrCreatorOfMe failed", e)
             return false
         }
-        const meInfo = WKSDK.shared().channelManager.getChannelInfo(new Channel(loginUID, ChannelTypePerson))
-        const me = WKSDK.shared().channelManager.getChannel(loginUID, ChannelTypePerson)
-        const category = meInfo?.orgData?.category ?? (meInfo as any)?.category ?? (me as any)?.category
-        return category === "system" || category === "customerService"
      }
 
 }

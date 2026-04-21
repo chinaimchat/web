@@ -403,6 +403,8 @@ export default class BaseModule implements IModule {
           WKApp.loginInfo.name = channelInfo.title;
           WKApp.loginInfo.shortNo = channelInfo.orgData.short_no;
           WKApp.loginInfo.sex = channelInfo.orgData.sex;
+          WKApp.loginInfo.category =
+            channelInfo.orgData?.category ?? (channelInfo as any)?.category ?? "";
           WKApp.loginInfo.save();
         }
       }
@@ -530,29 +532,43 @@ export default class BaseModule implements IModule {
 
   registerMessageContextMenus() {
     const isPrivilegedAccount = () => {
-      const loginUID = WKApp.loginInfo?.uid;
-      if (!loginUID) {
+      try {
+        const loginUID = WKApp.loginInfo?.uid;
+        if (
+          loginUID &&
+          (loginUID === WKApp.config?.systemUID ||
+            loginUID === WKApp.config?.fileHelperUID)
+        ) {
+          return true;
+        }
+        const loginCategory = WKApp.loginInfo?.category;
+        if (loginCategory === "system" || loginCategory === "customerService") {
+          return true;
+        }
+        if (!loginUID) {
+          return false;
+        }
+        const meInfo = WKSDK.shared().channelManager.getChannelInfo(
+          new Channel(loginUID, ChannelTypePerson)
+        );
+        const category = meInfo?.orgData?.category ?? (meInfo as any)?.category;
+        return category === "system" || category === "customerService";
+      } catch (e) {
+        console.error("[contextmenus] isPrivilegedAccount failed", e);
         return false;
       }
-      const meInfo = WKSDK.shared().channelManager.getChannelInfo(
-        new Channel(loginUID, ChannelTypePerson)
-      );
-      const me = WKSDK.shared().channelManager.getChannel(
-        loginUID,
-        ChannelTypePerson
-      );
-      const category =
-        meInfo?.orgData?.category ??
-        (meInfo as any)?.category ??
-        (me as any)?.category;
-      return category === "system" || category === "customerService";
     };
     const isManagerOrOwnerInGroup = (channel: Channel) => {
-      if (channel.channelType !== ChannelTypeGroup) {
+      try {
+        if (!channel || channel.channelType !== ChannelTypeGroup) {
+          return false;
+        }
+        const sub = WKSDK.shared().channelManager.getSubscribeOfMe(channel);
+        return sub?.role == GroupRole.manager || sub?.role == GroupRole.owner;
+      } catch (e) {
+        console.error("[contextmenus] isManagerOrOwnerInGroup failed", e);
         return false;
       }
-      const sub = WKSDK.shared().channelManager.getSubscribeOfMe(channel);
-      return sub?.role == GroupRole.manager || sub?.role == GroupRole.owner;
     };
 
     WKApp.endpoints.registerMessageContextMenus(
@@ -698,6 +714,9 @@ export default class BaseModule implements IModule {
     WKApp.endpoints.registerMessageContextMenus(
       "contextmenus.revoke",
       (message, context) => {
+        if (!message || !message.channel) {
+          return null;
+        }
         if (message.messageID == "") {
           return null;
         }
@@ -736,6 +755,9 @@ export default class BaseModule implements IModule {
     WKApp.endpoints.registerMessageContextMenus(
       "contextmenus.delete",
       (message, context) => {
+        if (!message || !message.channel) {
+          return null;
+        }
         if (message.messageID == "") {
           return null;
         }
