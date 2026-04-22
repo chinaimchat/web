@@ -13,11 +13,17 @@ server {
         listen       80;
         server_name  ${WEB_SERVER_NAME};
 
+        # Docker 内置 DNS；与变量 proxy_pass 配合，避免 backend 容器重建后仍连旧 IP
+        resolver 127.0.0.11 valid=10s ipv6=off;
+
         # 将 /api/v1/* 代理到唐僧叨叨后端（含 sticker、moments 等模块接口）
-        # 启动容器时需传环境变量 API_URL，例如: -e API_URL=http://后端服务:8080/
+        # 上游 host:port 由启动脚本从 API_URL 解析为 NGINX_API_UPSTREAM（须与 API_URL 一致）
         # 请求 /api/v1/sticker/store 会被转发为 后端/v1/sticker/store
         location /api/ {
-            proxy_pass  ${API_URL};
+            # 变量 proxy_pass 时不能依赖「尾斜杠剥掉 /api」的默认规则，需显式改写路径
+            set $api_upstream "${NGINX_API_UPSTREAM}";
+            rewrite ^/api/(.*)$ /$1 break;
+            proxy_pass http://$api_upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
