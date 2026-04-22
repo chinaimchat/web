@@ -33,8 +33,57 @@ function isPublicApiRequest(config: { url?: string; method?: string }): boolean 
     return false
 }
 
+const PREFERRED_API_URL_KEY = "tsdaodao_web_preferred_api_url"
+const PREFERRED_API_URL_TTL_MS = 10 * 60 * 1000
+
+function normalizeAPIURLs(urls?: string[]): string[] {
+    if (!urls || !Array.isArray(urls)) return []
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const raw of urls) {
+        const u = (raw || "").trim()
+        if (!u) continue
+        if (seen.has(u)) continue
+        seen.add(u)
+        out.push(u)
+    }
+    return out
+}
+
+function readPreferredAPIURL(): string | null {
+    try {
+        if (typeof localStorage === "undefined") return null
+        const raw = localStorage.getItem(PREFERRED_API_URL_KEY)
+        if (!raw) return null
+        const obj = JSON.parse(raw)
+        if (!obj || typeof obj.url !== "string" || typeof obj.ts !== "number") return null
+        if (Date.now() - obj.ts > PREFERRED_API_URL_TTL_MS) return null
+        return obj.url
+    } catch {
+        return null
+    }
+}
+
+function savePreferredAPIURL(url: string): void {
+    try {
+        if (!url || typeof localStorage === "undefined") return
+        localStorage.setItem(PREFERRED_API_URL_KEY, JSON.stringify({ url, ts: Date.now() }))
+    } catch {
+        // ignore
+    }
+}
+
+function shouldRetryWithNextHost(error: any): boolean {
+    if (!error) return false
+    if (error.code === "ECONNABORTED") return true
+    if (!error.response) return true
+    const status = error.response?.status
+    return typeof status === "number" && status >= 500 && status < 600
+}
+
 export class APIClientConfig {
     private _apiURL: string =""
+    private _apiURLs: string[] = []
     private _token:string = ""
     tokenCallback?:()=>string|undefined
     // private _apiURL: string = "/api/v1/" // 正式打包用此地址
@@ -46,6 +95,14 @@ export class APIClientConfig {
     }
     get apiURL():string {
         return this._apiURL
+    }
+
+    /** 多域名候选池：按顺序试错，首登成功后会写入 localStorage 作为下次首选。 */
+    set apiURLs(apiURLs: string[]) {
+        this._apiURLs = normalizeAPIURLs(apiURLs)
+    }
+    get apiURLs(): string[] {
+        return this._apiURLs
     }
 }
 
@@ -67,12 +124,37 @@ export default class APIClient {
             if (token && token !== "" && !isPublicApiRequest(config)) {
                 config.headers!["token"] = token;
             }
+            // 多域名试错重试：按顺序把候选 baseURL 注入本次请求。
+            const pool = self.config.apiURLs || []
+            if (pool.length > 0) {
+                const preferred = readPreferredAPIURL()
+                const ordered = preferred && pool.includes(preferred)
+                    ? [preferred, ...pool.filter(u => u !== preferred)]
+                    : [...pool]
+                ;(config as any).__apiCandidates = ordered
+                ;(config as any).__apiCandidateIndex = typeof (config as any).__apiCandidateIndex === "number"
+                    ? (config as any).__apiCandidateIndex
+                    : 0
+                config.baseURL = ordered[(config as any).__apiCandidateIndex]
+            }
             return config;
         });
 
         axios.interceptors.response.use(function (response) {
+            // 成功落地的 baseURL 写入首选，下次同端优先使用。
+            const url = response?.config?.baseURL
+            if (url) savePreferredAPIURL(String(url))
             return response;
-        }, function (error) {
+        }, async function (error) {
+            // 多域名试错重试：网络错误 / 5xx 自动切到下一个 host 重发。
+            const cfg: any = error?.config
+            const candidates: string[] = cfg?.__apiCandidates || []
+            let index: number = typeof cfg?.__apiCandidateIndex === "number" ? cfg.__apiCandidateIndex : 0
+            if (cfg && candidates.length > 0 && index < candidates.length - 1 && shouldRetryWithNextHost(error)) {
+                cfg.__apiCandidateIndex = index + 1
+                cfg.baseURL = candidates[index + 1]
+                return axios.request(cfg)
+            }
             var msg = "";
             const status = error.response && error.response.status
             const dataMsg = error.response?.data && (error.response.data as any).msg

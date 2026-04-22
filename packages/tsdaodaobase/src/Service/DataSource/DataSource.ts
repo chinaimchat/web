@@ -1,5 +1,6 @@
 import { Channel, ChannelInfo, ConversationExtra, Message, Subscriber } from "wukongimjssdk";
 import { APIResp } from "../APIClient";
+import { normalizeQRCodeURL } from "../../Utils/qrcode";
 
 export type ContactsChangeListener = () => void;
 
@@ -329,7 +330,7 @@ export interface IChannelDataSource {
 
 export class ChannelQrcodeResp implements APIResp {
     fill(data: any): void {
-        this.qrcode = data.qrcode
+        this.qrcode = normalizeQRCodeURL(data.qrcode)
         this.expire = data.expire
     }
     qrcode!: string

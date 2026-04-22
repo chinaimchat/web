@@ -5,6 +5,7 @@ import WKViewQueueHeader from "../WKViewQueueHeader";
 import "./index.css"
 import QRCode from 'qrcode.react';
 import { Spin, Toast } from "@douyinfe/semi-ui";
+import { normalizeQRCodeURL } from "../../Utils/qrcode";
 
 interface QRCodeMyState {
     qrcode?: string
@@ -30,7 +31,7 @@ export default class QRCodeMy extends Component<QRCodeMyProps, QRCodeMyState> {
         })
         if (resp) {
             this.setState({
-                qrcode: resp.data
+                qrcode: normalizeQRCodeURL(resp.data, WKApp.apiClient.config.apiURL)
             })
         }
     }
