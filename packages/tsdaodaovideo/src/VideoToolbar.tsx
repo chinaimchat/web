@@ -16,11 +16,8 @@ interface VideoToolbarState {
   previewUrl: string;
   uploadProgress: number;
   uploadStage: string;
-  /** 粘贴内网视频预览 URL 时保存的「视频对象键」；存在则「发送」直接引用不重复上传 */
   referenceVideoKey?: string;
-  /** 粘贴内网视频预览 URL 时保存的「封面对象键」，与上传约定一致 (`<videoKey>_cover.jpg`) */
   referenceCoverKey?: string;
-  /** 粘贴场景下从 <video> onLoadedMetadata 读到的元数据，用于 VideoContent 填充 */
   referenceMeta?: { width: number; height: number; second: number };
 }
 
@@ -128,8 +125,6 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
 
   componentDidMount() {
     const { conversationContext } = this.props;
-    // eslint-disable-next-line no-console
-    console.log('[wkpaste] VideoToolbar mounted, event=', WK_PASTE_VIDEO_PREVIEW_EVENT);
     conversationContext.addDragFileCallback((file) => {
       if (file.type && file.type.startsWith("video/")) {
         this.showVideoPreview(file);
@@ -138,21 +133,16 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
       return false;
     });
 
-    // 主路径：MessageInput 已在 textarea 目标阶段拦截粘贴，通过 window 事件转发视频引用
     this.mediaPasteListener = (event: Event) => {
       const ref = (event as CustomEvent<PastedVideoPreviewRef>).detail;
-      // eslint-disable-next-line no-console
-      console.log('[wkpaste] VideoToolbar got event, ref=', ref);
       if (ref) this.openDialogFromRef(ref);
     };
     window.addEventListener(WK_PASTE_VIDEO_PREVIEW_EVENT, this.mediaPasteListener);
 
-    // 兜底：document 捕获，覆盖 textarea 之外的粘贴目标
     this.pasteListener = (event: ClipboardEvent) => {
       if (event.clipboardData?.files && event.clipboardData.files.length > 0) return;
       const target = event.target as (Node | null);
       if (!target || !(target instanceof Element)) return;
-      // textarea 的粘贴走 MessageInput 路径，避免重复
       if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") return;
       if (!target.closest(".wk-conversation-footer")) return;
       const text = event.clipboardData?.getData?.("text/plain");
@@ -189,14 +179,6 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
     });
   }
 
-  onReferencePreviewLoaded = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const v = e.currentTarget;
-    const width = v.videoWidth || 0;
-    const height = v.videoHeight || 0;
-    const second = Math.max(1, Math.ceil(v.duration || 0));
-    this.setState({ referenceMeta: { width, height, second } });
-  };
-
   onFileChange = () => {
     const file = this.$input?.files?.[0];
     if (!file || !file.type.startsWith("video/")) {
@@ -210,7 +192,6 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
   onClose = () => {
     const { previewUrl, referenceVideoKey } = this.state;
     if (previewUrl && !referenceVideoKey) {
-      // 仅本地 blob URL 需要 revoke；远端预览 URL 不能 revoke
       URL.revokeObjectURL(previewUrl);
     }
     this.setState({
@@ -223,6 +204,14 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
     });
   };
 
+  onReferencePreviewLoaded = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget;
+    const width = video.videoWidth || 0;
+    const height = video.videoHeight || 0;
+    const second = Math.max(1, Math.ceil(video.duration || 0));
+    this.setState({ referenceMeta: { width, height, second } });
+  };
+
   onSend = async () => {
     const { file, referenceVideoKey, referenceCoverKey, referenceMeta } = this.state;
     const { conversationContext } = this.props;
@@ -232,7 +221,6 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
       return;
     }
 
-    // 粘贴内网预览 URL 的引用发送路径：直接构造 VideoContent，跳过重复上传
     if (referenceVideoKey) {
       const vc = new VideoContent();
       vc.url = referenceVideoKey;
@@ -264,7 +252,6 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
     const coverPath = `/${channel.channelType}/${channel.channelID}/${uuid}_cover.jpg`;
 
     try {
-      // 并行：获取两个上传URL + 生成封面
       const [uploadURL, coverUploadURL, coverResult] = await Promise.all([
         getUploadURL(videoPath),
         getUploadURL(coverPath),
@@ -276,7 +263,6 @@ export default class VideoToolbar extends Component<VideoToolbarProps, VideoTool
       this.setState({ uploadStage: "上传中" });
       const { blob, width, height, second } = coverResult;
 
-      // 并行：同时上传视频和封面
       const [videoRemotePath, coverRemotePath] = await Promise.all([
         uploadFile(file, uploadURL, file.name, (p) => {
           this.setState({ uploadProgress: p });

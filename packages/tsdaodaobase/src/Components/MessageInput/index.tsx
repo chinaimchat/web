@@ -16,8 +16,8 @@ import {
     PastedImagePreviewRef,
     PastedVideoPreviewRef,
 } from '../../Utils/clipboardMedia';
+import { ImageContent } from '../../Messages/Image';
 
-/** 粘贴内网图片/视频预览 URL 时的跨模块事件名；由 MessageInput 触发，ImageToolbar/VideoToolbar 订阅 */
 export const WK_PASTE_IMAGE_PREVIEW_EVENT = 'wk-paste-image-preview';
 export const WK_PASTE_VIDEO_PREVIEW_EVENT = 'wk-paste-video-preview';
 
@@ -41,6 +41,10 @@ interface MessageInputState {
     value: string | undefined
     mentionCache: any
     quickReplySelectIndex: number
+    pastedImageRef?: PastedImagePreviewRef
+    pastedImageWidth?: number
+    pastedImageHeight?: number
+    pastedImageCanSend?: boolean
 }
 
 export class MentionModel {
@@ -48,7 +52,6 @@ export class MentionModel {
     uids?: Array<string>
 }
 
-/** 是否存在有效 @（@所有人或至少一个 uid）；用于会话里判断是否走「粘贴预览链发图/发视频」等逻辑 */
 export function hasEffectiveMention(mention?: MentionModel): boolean {
     return !!(mention && (mention.all || (mention.uids && mention.uids.length > 0)));
 }
@@ -69,7 +72,6 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
     toolbars: Array<ElementType>
     inputRef: any
     eventListener: any
-    /** 绑在 textarea 上的原生 paste 监听，在目标阶段先于 react-mentions 的 document bubble handlePaste 运行 */
     private nativePasteListener?: (event: ClipboardEvent) => void
     private nativePasteBoundEl: HTMLElement | null = null
     constructor(props: MessageInputProps) {
@@ -92,10 +94,10 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
     componentDidMount() {
         const self = this;
         const scope = "messageInput"
-        hotkeys.filter = function (event) {
+        hotkeys.filter = function () {
             return true;
         }
-        hotkeys('ctrl+enter', scope, function (event, handler) {
+        hotkeys('ctrl+enter', scope, function () {
             const { value } = self.state;
             self.setState({
                 value: value + '\n',
@@ -113,13 +115,8 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
         if (onContext) {
             onContext(this)
         }
-        // this.inputRef.focus(); // 自动聚焦在iOS手机端体验不好
     }
 
-    // quickReplyPanelIsShow() { // 快捷回复面板是否显示
-    //     const { quickReplyModels } = this.state
-    //     return quickReplyModels && quickReplyModels.length > 0
-    // }
     componentWillUnmount() {
         const scope = "messageInput"
         hotkeys.unbind('ctrl+enter', scope);
@@ -130,43 +127,29 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
         this.detachNativePasteListener();
     }
 
-    /**
-     * 在 textarea 上安装原生 paste 捕获监听。
-     * react-mentions 通过 `document.addEventListener('paste', handler)`（bubble）劫持粘贴并手工
-     * 把 `text/plain` 写进 state，因此仅靠 document capture + stopPropagation 在部分版本里不足以阻断。
-     * 直接在目标元素上用 capture + stopImmediatePropagation，能稳定抢在 react-mentions 前处理内网
-     * 图片/视频预览 URL 的粘贴。
-     */
     private attachNativePasteListener(el: HTMLElement) {
         if (this.nativePasteBoundEl === el) return;
         this.detachNativePasteListener();
-        // eslint-disable-next-line no-console
-        console.log('[wkpaste] attach on', el.tagName, el);
         const listener = (event: ClipboardEvent) => {
             const text = event.clipboardData?.getData?.('text/plain') || '';
-            // eslint-disable-next-line no-console
-            console.log('[wkpaste] paste fired, target=', (event.target as any)?.tagName, 'text=', text?.slice(0, 200));
             if (event.clipboardData?.files && event.clipboardData.files.length > 0) {
-                // eslint-disable-next-line no-console
-                console.log('[wkpaste] has files, skip');
                 return;
             }
             if (!text) return;
 
             const imgRef = parseClipboardImagePreview(text);
-            // eslint-disable-next-line no-console
-            console.log('[wkpaste] parseClipboardImagePreview =>', imgRef);
             if (imgRef) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
-                // eslint-disable-next-line no-console
-                console.log('[wkpaste] dispatch image preview event');
-                window.dispatchEvent(new CustomEvent<PastedImagePreviewRef>(WK_PASTE_IMAGE_PREVIEW_EVENT, { detail: imgRef }));
+                const directImageHandler = (window as any).__wkHandlePastedImageRef;
+                if (typeof directImageHandler === "function") {
+                    directImageHandler(imgRef);
+                } else {
+                    this.openPastedImageDialog(imgRef);
+                }
                 return;
             }
             const vidRef = parseClipboardVideoPreview(text);
-            // eslint-disable-next-line no-console
-            console.log('[wkpaste] parseClipboardVideoPreview =>', vidRef);
             if (vidRef) {
                 event.preventDefault();
                 event.stopImmediatePropagation();
@@ -187,15 +170,54 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
         this.nativePasteBoundEl = null;
     }
 
+    private openPastedImageDialog(ref: PastedImagePreviewRef) {
+        this.setState({
+            pastedImageRef: ref,
+            pastedImageWidth: ref.width || 0,
+            pastedImageHeight: ref.height || 0,
+            pastedImageCanSend: !!(ref.width && ref.height),
+        });
+    }
+
+    private closePastedImageDialog() {
+        this.setState({
+            pastedImageRef: undefined,
+            pastedImageWidth: undefined,
+            pastedImageHeight: undefined,
+            pastedImageCanSend: false,
+        });
+    }
+
+    private onPastedImagePreviewLoad(e: any) {
+        const img = e.target;
+        this.setState({
+            pastedImageWidth: img.naturalWidth || img.width || this.state.pastedImageWidth || 0,
+            pastedImageHeight: img.naturalHeight || img.height || this.state.pastedImageHeight || 0,
+            pastedImageCanSend: true,
+        });
+    }
+
+    private sendPastedImageRef() {
+        const { pastedImageRef, pastedImageWidth, pastedImageHeight } = this.state;
+        if (!pastedImageRef) return;
+        const ic = new ImageContent();
+        ic.decodeJSON({
+            url: pastedImageRef.storageKey,
+            width: pastedImageWidth || pastedImageRef.width || 0,
+            height: pastedImageHeight || pastedImageRef.height || 0,
+        });
+        this.props.context.sendMessage(ic);
+        this.closePastedImageDialog();
+    }
+
     handleKeyPressed(e: any) {
-        if (e.charCode !== 13) { //非回车
+        if (e.charCode !== 13) {
             return;
         }
-        if (e.charCode === 13 && e.ctrlKey) { // ctrl+Enter不处理
+        if (e.charCode === 13 && e.ctrlKey) {
             return;
         }
         e.preventDefault();
-
         this.send()
     }
 
@@ -231,41 +253,40 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
         }
         return newText;
     }
-    /** 解析 @；无有效 @ 时返回 undefined，供会话层与 hasEffectiveMention 一致使用 */
+
     parseMention(text: string) {
         const { mentionCache } = this.state;
         if (!mentionCache || Object.keys(mentionCache).length === 0) {
             return undefined;
         }
-        const mentionMatchResult = text.match(/@([^ ]+) /g);
+        let mentionMatchResult = text.match(/@([^ ]+) /g)
         if (!mentionMatchResult || mentionMatchResult.length === 0) {
-            return undefined;
+            return undefined
         }
-        const mentionUIDS = new Array<string>();
+        let mentionUIDS = new Array<string>();
         let all = false;
         for (let i = 0; i < mentionMatchResult.length; i++) {
-            const mentionStr = mentionMatchResult[i];
-            const name = mentionStr.trim().replace("@", "");
-            const member = mentionCache[name];
+            let mentionStr = mentionMatchResult[i];
+            let name = mentionStr.trim().replace('@', '')
+            let member = mentionCache[name];
             if (member) {
                 if (member.uid === -1) {
-                    // -1表示@所有人
                     all = true;
                 } else {
-                    mentionUIDS.push(String(member.uid));
+                    mentionUIDS.push(String(member.uid))
                 }
             }
         }
-        const mention = new MentionModel();
+        let mention: MentionModel = new MentionModel();
         if (all) {
-            mention.all = true;
+            mention.all = true
         } else {
-            mention.uids = mentionUIDS;
+            mention.uids = mentionUIDS
         }
         if (!mention.all && (!mention.uids || mention.uids.length === 0)) {
-            return undefined;
+            return undefined
         }
-        return mention;
+        return mention
     }
 
     handleChange(event: { target: { value: string } }) {
@@ -275,33 +296,24 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
         })
     }
 
-
     insertText(text: string): void {
         let newText = this.state.value + text;
-        this.setState(
-            {
-                value: newText,
-            }
-        );
+        this.setState({ value: newText });
         this.inputRef.focus();
     }
-
-
 
     addMention(uid: string, name: string): void {
         const { mentionCache } = this.state
         if (name) {
             mentionCache[`${name}`] = { uid: uid, name: name }
             this.insertText(`@[${name}] `)
-            this.setState({
-                mentionCache: mentionCache,
-            })
+            this.setState({ mentionCache: mentionCache })
         }
     }
 
     render() {
         const { members, onInputRef, topView, toolbar } = this.props
-        const { value, mentionCache } = this.state
+        const { value, mentionCache, pastedImageRef, pastedImageCanSend } = this.state
         const hasValue = value && value.length > 0
         let selectedItems = new Array<MemberSuggestionDataItem>();
         if (members && members.length > 0) {
@@ -386,10 +398,10 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
                         allowSuggestionsAboveCursor={true}
                         inputRef={(ref: any) => {
                             this.inputRef = ref
-                            if (ref && ref.addEventListener) {
-                                this.attachNativePasteListener(ref as HTMLElement);
+                            if (ref) {
+                                this.attachNativePasteListener(ref)
                             } else {
-                                this.detachNativePasteListener();
+                                this.detachNativePasteListener()
                             }
                             if (onInputRef) {
                                 onInputRef(ref)
@@ -427,6 +439,28 @@ export default class MessageInput extends Component<MessageInputProps, MessageIn
                         />
                     </MentionsInput>
                 </div>
+                {
+                    pastedImageRef ? (
+                        <div className="wk-imagedialog">
+                            <div className="wk-imagedialog-mask" onClick={this.closePastedImageDialog.bind(this)}></div>
+                            <div className="wk-imagedialog-content">
+                                <div className="wk-imagedialog-content-close" onClick={this.closePastedImageDialog.bind(this)}>
+                                    <svg viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"><path d="M568.92178541 508.23169412l299.36805789-299.42461715a39.13899415 39.13899415 0 0 0 0-55.1452591L866.64962537 152.02159989a39.13899415 39.13899415 0 0 0-55.08869988 0L512.19286756 451.84213173 212.76825042 151.90848141a39.13899415 39.13899415 0 0 0-55.0886999 0L155.98277331 153.54869938a38.46028327 38.46028327 0 0 0 0 55.08869987L455.46394971 508.23169412 156.03933259 807.71287052a39.13899415 39.13899415 0 0 0 0 55.08869986l1.64021795 1.6967772a39.13899415 39.13899415 0 0 0 55.08869988 0l299.42461714-299.48117638 299.36805793 299.42461714a39.13899415 39.13899415 0 0 0 55.08869984 0l1.6967772-1.64021796a39.13899415 39.13899415 0 0 0 0-55.08869987L568.86522614 508.17513487z"></path></svg>
+                                </div>
+                                <div className="wk-imagedialog-content-title">发送图片</div>
+                                <div className="wk-imagedialog-content-body">
+                                    <div className="wk-imagedialog-content-preview">
+                                        <img alt="" className="wk-imagedialog-content-previewImg" src={pastedImageRef.absoluteUrl} onLoad={this.onPastedImagePreviewLoad.bind(this)} />
+                                    </div>
+                                    <div className="wk-imagedialog-footer" >
+                                        <button onClick={this.closePastedImageDialog.bind(this)}>取消</button>
+                                        <button onClick={this.sendPastedImageRef.bind(this)} className="wk-imagedialog-footer-okbtn" disabled={!pastedImageCanSend} style={{ backgroundColor: pastedImageCanSend ? WKApp.config.themeColor : 'gray' }}>发送</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : null
+                }
 
             </div>
         )

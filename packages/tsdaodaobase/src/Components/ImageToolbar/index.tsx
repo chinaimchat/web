@@ -21,13 +21,34 @@ interface ImageToolbarState {
     canSend?: boolean
     width?: number
     height?: number
-    /** 粘贴内网预览 URL 时保存的对象键；存在则「发送」走引用路径，不重复上传 */
     referenceKey?: string
+}
+
+function getClipboardImageFile(event: any): File | null {
+    const files = event.clipboardData?.files as FileList | undefined;
+    if (files && files.length > 0) {
+        const first = files[0];
+        if (first?.type && first.type.startsWith('image/')) {
+            return first;
+        }
+    }
+    const items = event.clipboardData?.items as DataTransferItemList | undefined;
+    if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item?.kind === 'file' && item.type && item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) {
+                    return file;
+                }
+            }
+        }
+    }
+    return null;
 }
 
 export default class ImageToolbar extends Component<ImageToolbarProps, ImageToolbarState>{
     pasteListen!:(event:any)=>void
-    /** MessageInput 在 textarea 目标阶段拦截后，通过 window 自定义事件转发匹配到的引用 */
     private mediaPasteListen!: (event: Event) => void
     constructor(props:any) {
         super(props)
@@ -36,52 +57,34 @@ export default class ImageToolbar extends Component<ImageToolbarProps, ImageTool
         }
     }
 
-    /** 打开「发送图片」预览弹窗，走引用路径（无需再上传） */
-    private openDialogFromRef(ref: PastedImagePreviewRef) {
-        this.setState({
-            file: undefined,
-            fileType: 'image',
-            previewUrl: ref.absoluteUrl,
-            referenceKey: ref.storageKey,
-            showDialog: true,
-            canSend: false,
-            width: undefined,
-            height: undefined,
-        });
-    }
-
     componentDidMount() {
         let self = this;
 
         const { conversationContext } = this.props
 
-        // eslint-disable-next-line no-console
-        console.log('[wkpaste] ImageToolbar mounted, event=', WK_PASTE_IMAGE_PREVIEW_EVENT);
-
-        // 主路径：MessageInput 在 textarea 上拦截粘贴后，派发 window 事件
         this.mediaPasteListen = (event: Event) => {
             const ref = (event as CustomEvent<PastedImagePreviewRef>).detail;
-            // eslint-disable-next-line no-console
-            console.log('[wkpaste] ImageToolbar got event, ref=', ref);
             if (ref) {
                 self.openDialogFromRef(ref);
             }
         };
+        (window as any).__wkHandlePastedImageRef = (ref: PastedImagePreviewRef) => {
+            self.openDialogFromRef(ref);
+        };
         window.addEventListener(WK_PASTE_IMAGE_PREVIEW_EVENT, this.mediaPasteListen);
 
-        // 兜底：document 捕获阶段监听，覆盖 textarea 之外的粘贴目标（例如其它 contenteditable）
-        this.pasteListen = function (event: any) {
-            const files = event.clipboardData?.files as FileList | undefined;
-            if (files && files.length > 0) {
-                self.showFile(files[0]);
+        this.pasteListen = function (event:any) { // 监听粘贴里的文件
+            const imageFile = getClipboardImageFile(event);
+            const text = event.clipboardData?.getData?.('text/plain') as string | undefined;
+            if (imageFile) {
+                event.preventDefault?.();
+                event.stopImmediatePropagation?.();
+                self.showFile(imageFile);
                 return;
             }
             const target = event.target as (Node | null);
             if (!target || !(target instanceof Element)) return;
-            // textarea 的粘贴走 MessageInput 路径，这里直接放行避免重复触发
-            if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') return;
             if (!target.closest('.wk-conversation-footer')) return;
-            const text = event.clipboardData?.getData?.('text/plain') as string | undefined;
             if (!text) return;
             const ref = parseClipboardImagePreview(text);
             if (!ref) return;
@@ -89,7 +92,7 @@ export default class ImageToolbar extends Component<ImageToolbarProps, ImageTool
             event.stopImmediatePropagation?.();
             self.openDialogFromRef(ref);
         }
-        document.addEventListener('paste', this.pasteListen, true)
+        document.addEventListener('paste',this.pasteListen, true)
 
         conversationContext.addDragFileCallback((file) => {
             if (file.type && file.type.startsWith('image/')) {
@@ -101,12 +104,26 @@ export default class ImageToolbar extends Component<ImageToolbarProps, ImageTool
     }
 
     componentWillUnmount() {
-        // eslint-disable-next-line no-console
-        console.log('[wkpaste] ImageToolbar WILL unmount');
-        document.removeEventListener("paste", this.pasteListen, true)
+        document.removeEventListener("paste",this.pasteListen, true)
         if (this.mediaPasteListen) {
             window.removeEventListener(WK_PASTE_IMAGE_PREVIEW_EVENT, this.mediaPasteListen)
         }
+        if ((window as any).__wkHandlePastedImageRef) {
+            delete (window as any).__wkHandlePastedImageRef
+        }
+    }
+
+    private openDialogFromRef(ref: PastedImagePreviewRef) {
+        this.setState({
+            file: undefined,
+            fileType: 'image',
+            previewUrl: ref.absoluteUrl,
+            referenceKey: ref.storageKey,
+            showDialog: true,
+            canSend: !!(ref.width && ref.height),
+            width: ref.width || undefined,
+            height: ref.height || undefined,
+        });
     }
 
     $fileInput: any
@@ -139,16 +156,15 @@ export default class ImageToolbar extends Component<ImageToolbarProps, ImageTool
     }
 
     onSend() {
-        const { conversationContext } = this.props
-        const { file, previewUrl, width, height, fileType, referenceKey } = this.state
-        if (fileType === "image") {
+        const {conversationContext} = this.props
+        const {  file, previewUrl,width,height,fileType, referenceKey } = this.state
+        if(fileType === "image") {
             if (referenceKey) {
-                // 粘贴内网预览 URL 的场景：直接引用服务端已有对象键发送，避免重复下载/上传
                 const ic = new ImageContent()
                 ic.decodeJSON({ url: referenceKey, width: width || 0, height: height || 0 })
                 conversationContext.sendMessage(ic)
             } else {
-                conversationContext.sendMessage(new ImageContent(file, previewUrl, width, height))
+                conversationContext.sendMessage(new ImageContent(file,previewUrl,width,height))
             }
         }
 
@@ -184,7 +200,7 @@ export default class ImageToolbar extends Component<ImageToolbarProps, ImageTool
                     <ImageDialog onSend={this.onSend.bind(this)} onLoad={this.onPreviewLoad.bind(this)} canSend={canSend} fileIconInfo={fileIconInfo} file={file} fileType={fileType} previewUrl={previewUrl} onClose={() => {
                         this.setState({
                             showDialog: !showDialog,
-                            referenceKey: undefined,
+                            referenceKey: undefined
                         })
                     }} />
                 ) : null
