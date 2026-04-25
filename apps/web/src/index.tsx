@@ -46,55 +46,8 @@ WKApp.apiClient.config.tokenCallback = () => {
 }
 WKApp.config.appVersion = `${process.env.REACT_APP_VERSION || "0.0.0"}`
 
-/** 管理后台「以此用户视角查看」：URL hash 携带 #mgr=<base64url UTF8 JSON>，写入本地登录态 */
-function tryConsumeManagerImpersonateFromHash() {
-  const h = window.location.hash || '';
-  if (!h.startsWith('#mgr=')) {
-    return;
-  }
-  try {
-    const raw = h.slice(5);
-    const binary = atob(raw);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const json = new TextDecoder().decode(bytes);
-    const d = JSON.parse(json) as {
-      uid?: string;
-      token?: string;
-      name?: string;
-      short_no?: string;
-      app_id?: string;
-      role?: string;
-      sex?: number;
-      is_work?: boolean;
-    };
-    if (d.token && d.uid) {
-      WKApp.loginInfo.uid = d.uid;
-      WKApp.loginInfo.token = d.token;
-      WKApp.loginInfo.name = d.name || '';
-      WKApp.loginInfo.shortNo = d.short_no || '';
-      WKApp.loginInfo.appID = d.app_id || '';
-      WKApp.loginInfo.role = d.role || '';
-      WKApp.loginInfo.sex = typeof d.sex === 'number' ? d.sex : 0;
-      WKApp.loginInfo.isWork = !!d.is_work;
-      WKApp.loginInfo.save();
-    }
-    const clean = window.location.pathname + window.location.search;
-    window.history.replaceState(null, document.title, clean);
-  } catch (e) {
-    console.error('mgr impersonate hash', e);
-    if (h.startsWith('#mgr=')) {
-      window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
-    }
-  }
-}
-
-tryConsumeManagerImpersonateFromHash();
-
 // H5：无 sid 时 LoginInfo 用空后缀存 token，登录后 Layout 再写入随机 sid 会导致刷新后读不到登录态。
-// 在加载登录信息前写入稳定 sid，与 LoginInfo.getSID() 一致。
+// 进入页面即补齐 sid，确保 LoginInfo 始终使用稳定的 storage key。
 function ensureStableSessionSidInUrl() {
   // Tauri 路线已下线，只判 Electron / 本地壳协议
   if ((window as any).__POWERED_ELECTRON__ || isElectron || isLocalShellProto) {

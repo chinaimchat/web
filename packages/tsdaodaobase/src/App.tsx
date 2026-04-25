@@ -258,6 +258,8 @@ export default class WKApp extends ProviderListener {
 
   private wsaddrs = new Array<string>(); // ws的连接地址
   private addrUsed = false; // 地址是否被使用
+  private lastImConnectUid = ""; // 最近一次 IM 连接的 uid
+  private lastImConnectToken = ""; // 最近一次 IM 连接的 token
 
   isPC = false; // 是否是PC端
   deviceId: string = ""; // 设备ID
@@ -280,7 +282,10 @@ export default class WKApp extends ProviderListener {
     // 是否是PC端（Tauri 路线已下线，只认 Electron preload 注入的 __POWERED_ELECTRON__）
     if ((window as any)?.__POWERED_ELECTRON__) {
       this.isPC = true;
+      WKSDK.shared().config.deviceFlag = 2;
       console.log("PC端")
+    } else {
+      WKSDK.shared().config.deviceFlag = 1;
     }
     this.deviceId = this.getDeviceIdFromStorage();
     this.deviceName = this.getOSAndVersion();
@@ -426,14 +431,38 @@ export default class WKApp extends ProviderListener {
 
   connectIM() {
     const uid = WKApp.loginInfo.uid || "";
-    if (uid !== this.lastImConnectUid) {
+    const token = WKApp.loginInfo.token || "";
+    if (!uid || !token) {
+      return;
+    }
+
+    const sdk = WKSDK.shared();
+    const status = sdk.connectManager.status;
+    const active = status === ConnectStatus.Connected || status === ConnectStatus.Connecting;
+    const sameSession = uid === this.lastImConnectUid && token === this.lastImConnectToken;
+
+    if (sameSession && active) {
+      console.log("[im] skip duplicate connect", uid, status);
+      return;
+    }
+
+    if (!sameSession) {
+      if (this.lastImConnectUid || active) {
+        try {
+          sdk.disconnect();
+        } catch {
+          // ignore
+        }
+      }
       this.wsaddrs = [];
       this.addrUsed = false;
       this.lastImConnectUid = uid;
+      this.lastImConnectToken = token;
     }
-    WKSDK.shared().config.uid = WKApp.loginInfo.uid;
-    WKSDK.shared().config.token = WKApp.loginInfo.token;
-    WKSDK.shared().connect();
+
+    sdk.config.uid = uid;
+    sdk.config.token = token;
+    sdk.connect();
   }
 
   registerModule(module: IModule) {
@@ -461,6 +490,7 @@ export default class WKApp extends ProviderListener {
     this.wsaddrs = [];
     this.addrUsed = false;
     this.lastImConnectUid = "";
+    this.lastImConnectToken = "";
     WKApp.loginInfo.logout();
     this.openChannel = undefined;
     try {

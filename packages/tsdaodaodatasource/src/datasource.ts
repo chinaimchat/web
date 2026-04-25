@@ -14,6 +14,16 @@ function joinApiResourceUrl(base: string, resourcePath: string): string {
     return `${b}/${p}`
 }
 
+/** HTTPS 页须 wss；HTTP / 原生壳优先 ws，避免老 App 拿到 wss 无法连 */
+function pickImSocketUrl(resp: { wss_addr?: string; ws_addr?: string }): string {
+    const wss = (resp?.wss_addr ?? "").trim()
+    const ws = (resp?.ws_addr ?? "").trim()
+    if (typeof window !== "undefined" && window.location?.protocol === "https:") {
+        return wss || ws
+    }
+    return ws || wss
+}
+
 export class ChannelDataSource implements IChannelDataSource {
 
     async exitChannel(channel: Channel): Promise<void> {
@@ -273,20 +283,13 @@ export class CommonDataSource implements ICommonDataSource {
     }
     imConnectAddr(): Promise<string> {
         return WKApp.apiClient.get(`users/${WKApp.loginInfo.uid}/im`).then((resp) => {
-            let addr = resp.wss_addr
-            if(!addr || addr==='') {
-                addr =  resp.ws_addr
-            }
-            return addr
+            return pickImSocketUrl(resp)
         });
     }
     imConnectAddrs(): Promise<string[]> {
         return WKApp.apiClient.get(`users/${WKApp.loginInfo.uid}/im`).then((resp) => {
-            let addr = resp.wss_addr
-            if(!addr || addr==='') {
-                addr =  resp.ws_addr
-            }
-            if (!addr || addr === "") {
+            const addr = pickImSocketUrl(resp)
+            if (!addr) {
                 console.error("[im] users/.../im 未返回 wss_addr/ws_addr", resp)
                 return []
             }
