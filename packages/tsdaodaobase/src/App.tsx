@@ -287,7 +287,7 @@ export default class WKApp extends ProviderListener {
     } else {
       WKSDK.shared().config.deviceFlag = 1;
     }
-    this.deviceId = this.getDeviceIdFromStorage();
+    this.deviceId = this.getWindowScopedDeviceId();
     this.deviceName = this.getOSAndVersion();
     this.deviceModel = this.getBrandsFromUserAgent();
 
@@ -364,6 +364,26 @@ export default class WKApp extends ProviderListener {
       StorageService.shared.setItem("deviceId", deviceId);
     }
     return deviceId;
+  }
+
+  /**
+   * 设备标识拆成两层：
+   * - baseDeviceId: 机器级（持久化在 local storage）
+   * - windowId: 窗口级（sessionStorage，每个窗口独立）
+   * 最终组合上报，避免同账号多窗口被判定为同设备互挤。
+   */
+  getWindowScopedDeviceId() {
+    const baseDeviceId = this.getDeviceIdFromStorage();
+    if (typeof window === "undefined") {
+      return baseDeviceId;
+    }
+    const windowIdKey = "wk-window-id";
+    let windowId = window.sessionStorage.getItem(windowIdKey);
+    if (!windowId || windowId === "") {
+      windowId = this.generateUUID();
+      window.sessionStorage.setItem(windowIdKey, windowId);
+    }
+    return `${baseDeviceId}:${windowId}`;
   }
 
   generateUUID() {
