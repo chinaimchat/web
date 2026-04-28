@@ -14,6 +14,22 @@ export class UnknownCell extends MessageCell {
       return <VideoCell message={message} context={context} />;
     }
 
+    if (content.realContentType === 9) {
+      return (
+        <MessageBase context={context} message={message}>
+          [红包消息暂不支持查看，请至手机端查看详情]
+        </MessageBase>
+      );
+    }
+
+    if (content.realContentType === 10) {
+      return (
+        <MessageBase context={context} message={message}>
+          [转账消息暂不支持查看，请至手机端查看详情]
+        </MessageBase>
+      );
+    }
+
     return (
       <MessageBase context={context} message={message}>
         [此消息不支持查看，请至手机端查看详情({content.realContentType})]
