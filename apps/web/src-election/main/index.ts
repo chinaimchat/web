@@ -4,6 +4,7 @@ import {
   globalShortcut,
   ipcMain,
   nativeImage as NativeImage,
+  powerMonitor,
   systemPreferences,
   Menu,
   Tray,
@@ -910,6 +911,23 @@ app.on("ready", () => {
 
   registerMainProcessIpcOnce();
   createMainWindow();
+
+  // 笔记本合盖/休眠恢复后 TCP 往往已死；通知各渲染进程重走 userIM + 建连（与 visibility 互补）
+  try {
+    powerMonitor.on("resume", () => {
+      BrowserWindow.getAllWindows().forEach((w) => {
+        if (!w.isDestroyed()) {
+          try {
+            w.webContents.send("system-resume");
+          } catch (_) {
+            /* ignore */
+          }
+        }
+      });
+    });
+  } catch (e) {
+    console.warn("[Electron] powerMonitor.resume 不可用:", e);
+  }
 
   try {
     updateTray();

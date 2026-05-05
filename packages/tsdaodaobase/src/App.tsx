@@ -260,6 +260,16 @@ export default class WKApp extends ProviderListener {
   private addrUsed = false; // 地址是否被使用
   private lastImConnectUid = ""; // 最近一次 IM 连接的 uid
   private lastImConnectToken = ""; // 最近一次 IM 连接的 token
+  /** 避免重复注册 visibility / online 监听 */
+  private imResumeHandlersBound = false;
+  /** IM 鉴权失败（reasonCode=2）后是否已做过一次「刷新 userIM + 重连」；成功连上后清零 */
+  private imAuthRecoveryAttempted = false;
+  /** 最近一次收到心跳 PONG（ConnectDelayListener，delay≠9999）的时间；用于发现「状态 Connected 但链路已死」 */
+  private imLastPongAt = 0;
+  /** 假活软重连节流，避免与 SDK 内部重连叠加 */
+  private imLastStaleRecoverAt = 0;
+  private imStaleProbeTimer: ReturnType<typeof setInterval> | null = null;
+  private imDelayListenerBound = false;
 
   isPC = false; // 是否是PC端
   deviceId: string = ""; // 设备ID
@@ -301,8 +311,14 @@ export default class WKApp extends ProviderListener {
     WKSDK.shared().config.provider.connectAddrCallback = async (
       callback: ConnectAddrCallback
     ) => {
-      if (!this.wsaddrs || this.wsaddrs.length == 0) {
+      // 每次建连前都走 users/{uid}/im：服务端 userIM 会把当前会话 token 同步到悟空。
+      // 若重连时复用旧 wsaddrs、跳过该请求，IM 重启或 token 已轮换后易出现 not found / verify fail，
+      // 表现为频繁掉线、消息发不出，只能退出重登。
+      try {
         this.wsaddrs = await WKApp.dataSource.commonDataSource.imConnectAddrs();
+      } catch (e) {
+        console.error("[im] imConnectAddrs 请求失败", e);
+        this.wsaddrs = [];
       }
       if (this.wsaddrs.length > 0) {
         this.addrUsed = true;
@@ -314,6 +330,8 @@ export default class WKApp extends ProviderListener {
       }
     };
 
+    this.bindImHeartbeatStaleProbe();
+
     WKApp.endpoints.addOnLogin(() => {
       this.startMain();
     });
@@ -324,12 +342,30 @@ export default class WKApp extends ProviderListener {
 
     WKSDK.shared().connectManager.addConnectStatusListener(
       (status: ConnectStatus, reasonCode?: number) => {
+        if (status === ConnectStatus.Connected) {
+          this.imAuthRecoveryAttempted = false;
+          this.imLastPongAt = Date.now();
+          this.scheduleImStaleProbe();
+        }
+        if (
+          status === ConnectStatus.Disconnect ||
+          status === ConnectStatus.ConnectFail
+        ) {
+          this.stopImStaleProbe();
+        }
         if (status === ConnectStatus.ConnectKick) {
           console.log("被踢--->", reasonCode);
           WKApp.shared.logout();
-        } else if (reasonCode == 2) {
-          // 认证失败！
-          WKApp.shared.logout();
+        } else if (reasonCode === 2) {
+          // 认证失败：先强制再走 userIM 同步 token 并重连一次，避免轻微漂移就只能重登
+          console.warn("[im] CONNACK 认证失败，尝试刷新 IM 凭证后重连");
+          if (!this.imAuthRecoveryAttempted) {
+            this.imAuthRecoveryAttempted = true;
+            this.refreshImConnectionSoft();
+          } else {
+            this.imAuthRecoveryAttempted = false;
+            WKApp.shared.logout();
+          }
         } else if (status === ConnectStatus.Disconnect) {
           if (this.addrUsed && this.wsaddrs.length > 1) {
             const oldwsAddr = this.wsaddrs[0];
@@ -341,6 +377,8 @@ export default class WKApp extends ProviderListener {
         }
       }
     );
+
+    this.bindImResumeReconnectHandlers();
 
     // 通知设置
     const notificationIsClose = StorageService.shared.getItem(
@@ -437,6 +475,127 @@ export default class WKApp extends ProviderListener {
     }
   }
 
+  /**
+   * 浏览器后台标签、休眠或断网后 WebSocket 常已失效，但 SDK 可能仍处于断连或长时间重连中。
+   * 在页面重新可见或网络恢复时主动 connectIM（内部会跳过已连接/连接中的同会话重复连接）。
+   */
+  private bindImResumeReconnectHandlers() {
+    if (this.imResumeHandlersBound || typeof window === "undefined") {
+      return;
+    }
+    this.imResumeHandlersBound = true;
+
+    const tryReconnect = () => {
+      if (!WKApp.loginInfo.isLogined()) {
+        return;
+      }
+      const st = WKSDK.shared().connectManager.status;
+      if (st !== ConnectStatus.Connected && st !== ConnectStatus.Connecting) {
+        console.log("[im] resume: reconnect after visibility/network restore, status=", st);
+        this.connectIM();
+      }
+    };
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        tryReconnect();
+      }
+    });
+    window.addEventListener("online", tryReconnect);
+    window.addEventListener("pageshow", (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        tryReconnect();
+      }
+    });
+    // Electron：系统休眠/唤醒不会触发浏览器 visibility 的完整链路，由主进程 powerMonitor 转发
+    const ipc = (window as { ipc?: { on: (ch: string, fn: () => void) => void } })
+      .ipc;
+    if ((window as { __POWERED_ELECTRON__?: boolean }).__POWERED_ELECTRON__ && ipc?.on) {
+      ipc.on("system-resume", () => {
+        tryReconnect();
+      });
+    }
+  }
+
+  /**
+   * 监听 SDK 心跳 RTT；9999 为 ping 超时内部值，不计入「收到 PONG」。
+   */
+  private bindImHeartbeatStaleProbe() {
+    if (this.imDelayListenerBound || typeof window === "undefined") {
+      return;
+    }
+    this.imDelayListenerBound = true;
+    WKSDK.shared().connectManager.addConnectDelayListener((delay: number) => {
+      if (delay !== 9999) {
+        this.imLastPongAt = Date.now();
+      }
+    });
+  }
+
+  private stopImStaleProbe() {
+    if (this.imStaleProbeTimer != null) {
+      clearInterval(this.imStaleProbeTimer);
+      this.imStaleProbeTimer = null;
+    }
+  }
+
+  /**
+   * Connected 后周期性检查：若长时间没有新的 PONG，认为 TCP 假活（常见表现：发消息一直失败）。
+   * 走与 token 恢复相同的软重连（清空 wsaddrs → disconnect → connectIM，强制 userIM）。
+   */
+  private scheduleImStaleProbe() {
+    this.stopImStaleProbe();
+    if (!WKApp.loginInfo.isLogined()) {
+      return;
+    }
+    const sdk = WKSDK.shared();
+    const hb = sdk.config.heartbeatInterval || 60000;
+    const intervalMs = Math.min(
+      45000,
+      Math.max(20000, Math.floor(hb * 0.75))
+    );
+    this.imStaleProbeTimer = setInterval(() => {
+      if (!WKApp.loginInfo.isLogined()) {
+        this.stopImStaleProbe();
+        return;
+      }
+      if (!sdk.connectManager.connected()) {
+        return;
+      }
+      if (this.imLastPongAt <= 0) {
+        return;
+      }
+      const threshold = Math.max(Math.floor(hb * 2.5), 120000);
+      if (Date.now() - this.imLastPongAt <= threshold) {
+        return;
+      }
+      const now = Date.now();
+      if (now - this.imLastStaleRecoverAt < 60000) {
+        return;
+      }
+      this.imLastStaleRecoverAt = now;
+      console.warn(
+        "[im] stale probe: 超过阈值仍无 PONG，尝试刷新 userIM 并重连",
+        { thresholdMs: threshold, heartbeatMs: hb }
+      );
+      this.refreshImConnectionSoft();
+    }, intervalMs);
+  }
+
+  /** 强制重新拉 userIM 并建连（不切登录态） */
+  private refreshImConnectionSoft() {
+    this.wsaddrs = [];
+    this.addrUsed = false;
+    try {
+      WKSDK.shared().disconnect();
+    } catch {
+      // ignore
+    }
+    setTimeout(() => {
+      WKApp.shared.connectIM();
+    }, 300);
+  }
+
   startMain() {
     this.connectIM();
     WKApp.dataSource.contactsSync(); // 同步通讯录
@@ -462,6 +621,8 @@ export default class WKApp extends ProviderListener {
     const sameSession = uid === this.lastImConnectUid && token === this.lastImConnectToken;
 
     if (sameSession && active) {
+      // 已连接时也保持假活探测（避免只连一次、从不进入 Connected 监听补 schedule）
+      this.scheduleImStaleProbe();
       console.log("[im] skip duplicate connect", uid, status);
       return;
     }
@@ -483,6 +644,8 @@ export default class WKApp extends ProviderListener {
     sdk.config.uid = uid;
     sdk.config.token = token;
     sdk.connect();
+    // 建连过程中先起定时器；真正 Connected 时 connect 监听会再次 schedule 并刷新 imLastPongAt
+    this.scheduleImStaleProbe();
   }
 
   registerModule(module: IModule) {
@@ -507,6 +670,10 @@ export default class WKApp extends ProviderListener {
     } catch {
       // ignore
     }
+    this.imAuthRecoveryAttempted = false;
+    this.stopImStaleProbe();
+    this.imLastPongAt = 0;
+    this.imLastStaleRecoverAt = 0;
     this.wsaddrs = [];
     this.addrUsed = false;
     this.lastImConnectUid = "";

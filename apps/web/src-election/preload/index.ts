@@ -36,6 +36,8 @@ const IPC_ON_ALLOW = new Set([
   "show-conversations",
   "deep-link",
   "screenshots-ok",
+  /** 主进程 powerMonitor resume：休眠唤醒后提示渲染进程重拉 IM */
+  "system-resume",
 ]);
 
 contextBridge.exposeInMainWorld("__POWERED_ELECTRON__", true);
