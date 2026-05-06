@@ -60,6 +60,12 @@ interface FileToolbarState {
 
 export default class FileToolbar extends Component<FileToolbarProps, FileToolbarState>{
     pasteListen!:(event:any)=>void
+    private readonly handleDocumentPaste = function handleDocumentPaste(this: FileToolbar, event: any) {
+        let files = event.clipboardData.files;
+        if (files.length > 0) {
+            this.showFile(files[0]);
+        }
+    }.bind(this)
     constructor(props:any) {
         super(props)
         this.state = {
@@ -70,23 +76,16 @@ export default class FileToolbar extends Component<FileToolbarProps, FileToolbar
     }
 
     componentDidMount() {
-        let self = this;
-
         const { conversationContext } = this.props
 
-        this.pasteListen = function (event:any) {
-            let files = event.clipboardData.files;
-            if (files.length > 0) {
-                self.showFile(files[0]);
-            }
-        }
+        this.pasteListen = this.handleDocumentPaste
         document.addEventListener('paste',this.pasteListen )
 
         conversationContext.addDragFileCallback((file) => {
             if (file.type && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
                 return false;
             }
-            self.showFile(file);
+            this.showFile(file);
             return true;
         })
     }

@@ -270,6 +270,10 @@ export default class WKApp extends ProviderListener {
   private imLastStaleRecoverAt = 0;
   private imStaleProbeTimer: ReturnType<typeof setInterval> | null = null;
   private imDelayListenerBound = false;
+  private onVisibilityChangeListener?: () => void;
+  private onOnlineListener?: () => void;
+  private onPageShowListener?: (e: PageTransitionEvent) => void;
+  private onSystemResumeListener?: () => void;
 
   isPC = false; // 是否是PC端
   deviceId: string = ""; // 设备ID
@@ -496,24 +500,30 @@ export default class WKApp extends ProviderListener {
       }
     };
 
-    document.addEventListener("visibilitychange", () => {
+    this.onVisibilityChangeListener = function onVisibilityChange() {
       if (document.visibilityState === "visible") {
         tryReconnect();
       }
-    });
-    window.addEventListener("online", tryReconnect);
-    window.addEventListener("pageshow", (e: PageTransitionEvent) => {
+    };
+    this.onOnlineListener = function onOnline() {
+      tryReconnect();
+    };
+    this.onPageShowListener = function onPageShow(e: PageTransitionEvent) {
       if (e.persisted) {
         tryReconnect();
       }
-    });
+    };
+    document.addEventListener("visibilitychange", this.onVisibilityChangeListener);
+    window.addEventListener("online", this.onOnlineListener);
+    window.addEventListener("pageshow", this.onPageShowListener);
     // Electron：系统休眠/唤醒不会触发浏览器 visibility 的完整链路，由主进程 powerMonitor 转发
     const ipc = (window as { ipc?: { on: (ch: string, fn: () => void) => void } })
       .ipc;
     if ((window as { __POWERED_ELECTRON__?: boolean }).__POWERED_ELECTRON__ && ipc?.on) {
-      ipc.on("system-resume", () => {
+      this.onSystemResumeListener = function onSystemResume() {
         tryReconnect();
-      });
+      };
+      ipc.on("system-resume", this.onSystemResumeListener);
     }
   }
 
@@ -601,11 +611,24 @@ export default class WKApp extends ProviderListener {
     WKApp.dataSource.contactsSync(); // 同步通讯录
     // ProhibitwordsService.shared.sync(); // 同步敏感词
 
-    WKApp.apiClient.get(`/user/devices/${WKApp.shared.deviceId}`).then((res) => {
-      if (res.id) {
-        WKSDK.shared().config.clientMsgDeviceId = res.id;
-      }
-    })
+    // 根因修复：token 持久化登录场景不会重新写入当前 window 设备记录，
+    // 直接请求 /user/devices/:device_id 容易命中“设备不存在(400)”并打断启动链路。
+    // 启动阶段改为读取设备列表并择优设置 clientMsgDeviceId，避免依赖“当前设备行已存在”。
+    WKApp.apiClient
+      .get(`/user/devices`)
+      .then((res) => {
+        if (!Array.isArray(res) || res.length === 0) {
+          return;
+        }
+        const selfDevice = res.find((item: any) => Number(item?.self) === 1);
+        const target = selfDevice || res[0];
+        if (target?.id) {
+          WKSDK.shared().config.clientMsgDeviceId = target.id;
+        }
+      })
+      .catch((err) => {
+        console.warn("[startup] load device list failed", err);
+      });
   }
 
   connectIM() {
