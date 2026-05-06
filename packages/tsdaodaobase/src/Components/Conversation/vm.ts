@@ -587,13 +587,29 @@ export default class ConversationVM extends ProviderListener {
         if (!messageExtras || messageExtras.length == 0) {
             return
         }
+        let deletedChanged = false
+        const deletedMessageIDs = new Set<string>()
         for (const messageExtra of messageExtras) {
             this.updateReplyMessageContent(messageExtra)
+            if ((messageExtra as any).isMutualDeleted) {
+                deletedMessageIDs.add(messageExtra.messageID)
+            }
             const message = this.findMessageWithMessageID(messageExtra.messageID)
             if (message) {
                 message.message.remoteExtra = messageExtra
                 message.resetParts()
             }
+        }
+        if (deletedMessageIDs.size > 0) {
+            const newMessages = this.messagesOfOrigin.filter((item) => !deletedMessageIDs.has(item.messageID))
+            if (newMessages.length !== this.messagesOfOrigin.length) {
+                this.messagesOfOrigin = newMessages
+                this.refreshMessages(newMessages)
+                deletedChanged = true
+            }
+        }
+        if (deletedChanged) {
+            return
         }
         this.notifyListener()
 

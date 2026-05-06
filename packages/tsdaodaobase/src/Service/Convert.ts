@@ -118,6 +118,7 @@ export class Convert {
         messageExtra.unreadCount = msgExtraMap["unread_count"] || 0
         messageExtra.extraVersion = msgExtraMap["extra_version"] || 0
         messageExtra.editedAt = msgExtraMap["edited_at"] || 0
+        ;(messageExtra as any).isMutualDeleted = msgExtraMap["is_mutual_deleted"] === 1
 
         const contentEditObj = msgExtraMap["content_edit"]
         if(contentEditObj) {

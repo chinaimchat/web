@@ -1,4 +1,4 @@
-import { Channel, Subscriber } from "wukongimjssdk";
+import { Channel, Subscriber, SubscriberChangeListener, WKSDK } from "wukongimjssdk";
 import WKApp from "../../App";
 import { ProviderListener } from "../../Service/Provider";
 
@@ -11,13 +11,30 @@ export class SubscriberListVM extends ProviderListener {
     limit: number = 50
     hasMore: boolean = true
     keyword: string = ""
+    private subscriberChangeListener?: SubscriberChangeListener
     constructor(channel: Channel) {
         super()
         this.channel = channel
     }
 
     didMount(): void {
+        this.subscriberChangeListener = (channel: Channel) => {
+            if (!this.channel.isEqual(channel)) {
+                return
+            }
+            this.currPage = 1
+            this.subscribers = []
+            this.requestSubscribers()
+        }
+        WKSDK.shared().channelManager.addSubscriberChangeListener(this.subscriberChangeListener)
         this.delyRequestSubscribers()
+    }
+
+    didUnMount(): void {
+        if (this.subscriberChangeListener) {
+            WKSDK.shared().channelManager.removeSubscriberChangeListener(this.subscriberChangeListener)
+            this.subscriberChangeListener = undefined
+        }
     }
 
     search(keyword:string) {
